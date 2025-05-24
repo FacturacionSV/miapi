@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+ï»¿using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
@@ -12,13 +12,13 @@ using System.Threading.Tasks;
 
 
 var builder = WebApplication.CreateBuilder(args);
-// Añadir configuración CORS que permite cualquier origen
+// AÃ±adir configuraciÃ³n CORS que permite cualquier origen
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()   // Permite cualquier origen
-              .AllowAnyMethod()   // Permite cualquier método HTTP (GET, POST, PUT, DELETE, etc.)
+              .AllowAnyMethod()   // Permite cualquier mÃ©todo HTTP (GET, POST, PUT, DELETE, etc.)
               .AllowAnyHeader();  // Permite cualquier cabecera HTTP
     });
 });
@@ -27,8 +27,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient(); // Registrando IHttpClientFactory
-builder.Services.AddMemoryCache(); // Agregar servicio de caché
-builder.Services.AddSingleton<TokenCacheService>(); // Registrar servicio de caché de tokens
+builder.Services.AddMemoryCache(); // Agregar servicio de cachÃ©
+builder.Services.AddSingleton<TokenCacheService>(); // Registrar servicio de cachÃ© de tokens
 builder.Services.AddSingleton<FirmaElectronicaService>(); // Registrar como singleton
 builder.Services.AddSingleton<RecepcionDTEService>(); // Registrar como singleton
 
@@ -55,11 +55,11 @@ app.MapPost("/api/procesar-dte", async (
     {
         var request = await context.Request.ReadFromJsonAsync<DteUnificadoRequest>();
         if (request == null)
-            return Results.BadRequest("Solicitud inválida");
-        // 1. Obtener token (usando el servicio de caché)
+            return Results.BadRequest("Solicitud invÃ¡lida");
+        // 1. Obtener token (usando el servicio de cachÃ©)
         string token = await tokenService.GetTokenAsync(request.Usuario, request.Password, request.Ambiente);
         if (string.IsNullOrEmpty(token))
-            return Results.BadRequest("Error en autenticación: token no recibido");
+            return Results.BadRequest("Error en autenticaciÃ³n: token no recibido");
         // 2. Firma
         string jsonFirmado;
         try
@@ -67,13 +67,13 @@ app.MapPost("/api/procesar-dte", async (
             var dteFirmado = await firmaService.FirmarDocumento(request.DteJson, request.Nit, request.PasswordPrivado);
             jsonFirmado = JsonConvert.DeserializeObject<dynamic>(dteFirmado)?.body.ToString();
             if (string.IsNullOrEmpty(jsonFirmado))
-                return Results.BadRequest("Error en firma: documento firmado inválido");
+                return Results.BadRequest("Error en firma: documento firmado invÃ¡lido");
         }
         catch (Exception ex)
         {
             return Results.BadRequest($"Error en firma de documento: {ex.Message}");
         }
-        // 3. Envío
+        // 3. EnvÃ­o
         string respuestaEnvio;
         try
         {
@@ -87,7 +87,7 @@ app.MapPost("/api/procesar-dte", async (
         }
         catch (Exception ex)
         {
-            return Results.BadRequest($"Error en envío de DTE: {ex.Message}");
+            return Results.BadRequest($"Error en envÃ­o de DTEss: {ex.Message}");
         }
         // Procesar respuesta
         try
@@ -106,7 +106,7 @@ app.MapPost("/api/procesar-dte", async (
                     });
                 }
             }
-            return Results.BadRequest("No se recibió sello de Hacienda");
+            return Results.BadRequest("No se recibiÃ³ sello de Hacienda");
         }
         catch (Exception ex)
         {
@@ -118,7 +118,78 @@ app.MapPost("/api/procesar-dte", async (
         return Results.BadRequest($"Error general: {ex.Message}");
     }
 });
+app.MapPost("/api/anular-dte", async (
+    HttpContext context,
+    TokenCacheService tokenService,
+    FirmaElectronicaService firmaService,
+    AnulacionDTEService anulacionService) =>
+{
+    try
+    {
 
+        var request = await context.Request.ReadFromJsonAsync<DteAnulacionRequest>();
+        if (request == null)
+            return Results.BadRequest("Solicitud invï¿½lida");
+
+        // 1. Obtener token (usando el servicio de cachï¿½)
+        string token = await tokenService.GetTokenAsync(request.Usuario, request.Password, request.Ambiente);
+        if (string.IsNullOrEmpty(token))
+            return Results.BadRequest("Error en autenticaciï¿½n: token no recibido");
+
+        // 2. Firma
+        string jsonFirmado;
+        try
+        {
+            var dteFirmado = await firmaService.FirmarDocumento(request.DteJson, request.Nit, request.PasswordPrivado);
+            jsonFirmado = JsonConvert.DeserializeObject<dynamic>(dteFirmado)?.body.ToString();
+            if (string.IsNullOrEmpty(jsonFirmado))
+                return Results.BadRequest("Error en firma: documento firmado invï¿½lido");
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest($"Error en firma de documento: {ex.Message}");
+        }
+
+        // 3. Envï¿½o de anulaciï¿½n
+        string respuestaEnvio;
+        try
+        {
+            int ambienteInt = request.Ambiente == "01" ? 1 : 0;
+            respuestaEnvio = await anulacionService.EnviarDTE(jsonFirmado, token, ambienteInt);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest($"Error en envï¿½o de DTE (anulaciï¿½n): {ex.Message}");
+        }
+
+        // Procesar respuesta
+        try
+        {
+            using (JsonDocument doc = JsonDocument.Parse(respuestaEnvio))
+            {
+                if (doc.RootElement.TryGetProperty("selloRecibido", out var sello))
+                {
+                    return Results.Ok(new
+                    {
+                        Token = token,
+                        DteFirmado = jsonFirmado,
+                        SelloRecibido = sello.GetString()
+
+                    });
+                }
+            }
+            return Results.BadRequest("No se recibiï¿½ sello de Hacienda");
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest($"Error procesando respuesta: {ex.Message}");
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest($"Error general: {ex.Message}");
+    }
+});
 
 app.Run("https://*:7122");
 
